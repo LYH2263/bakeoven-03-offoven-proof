@@ -18,10 +18,16 @@ class Interval:
 class RecipeDurations:
     ferment_min: int
     bake_min: int
+    proof_off_oven: bool = False  # 离炉醒发：发酵不占炉，仅烘烤段占炉
 
     @property
     def total(self) -> int:
         return self.ferment_min + self.bake_min
+
+    @property
+    def occupancy_min(self) -> int:
+        """Minutes actually occupying the oven (bake only when proofing off-oven)."""
+        return self.bake_min if self.proof_off_oven else self.total
 
 
 @dataclass(frozen=True)
@@ -38,12 +44,20 @@ def build_occupancies(
     start_min: int,
     recipe: RecipeDurations,
 ) -> list[Occupancy]:
+    """Oven-occupying segments for a batch.
+
+    Bake never starts before start_min + ferment_min. Off-oven proofing
+    products occupy the oven only during bake; zero-length segments
+    (e.g. ferment_min=0) are omitted entirely.
+    """
     ferment = Interval(start_min, start_min + recipe.ferment_min)
     bake = Interval(ferment.end, ferment.end + recipe.bake_min)
-    return [
-        Occupancy(oven_id, ferment, "ferment", batch_id),
-        Occupancy(oven_id, bake, "bake", batch_id),
-    ]
+    out: list[Occupancy] = []
+    if not recipe.proof_off_oven and recipe.ferment_min > 0:
+        out.append(Occupancy(oven_id, ferment, "ferment", batch_id))
+    if recipe.bake_min > 0:
+        out.append(Occupancy(oven_id, bake, "bake", batch_id))
+    return out
 
 
 def find_conflicts(existing: list[Occupancy], candidates: list[Occupancy]) -> list[tuple[Occupancy, Occupancy]]:

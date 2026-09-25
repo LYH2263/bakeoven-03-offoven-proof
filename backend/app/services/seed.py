@@ -9,7 +9,7 @@ def seed_if_empty(db: Session) -> None:
         return
     products = [
         Product(name="乡村欧包", ferment_min=40, bake_min=35),
-        Product(name="黄油可颂", ferment_min=25, bake_min=20),
+        Product(name="黄油可颂", ferment_min=25, bake_min=20, proof_off_oven=True),
         Product(name="布朗尼", ferment_min=0, bake_min=30),
     ]
     ovens = [

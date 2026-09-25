@@ -11,6 +11,7 @@ from app.schemas.schemas import (
     GanttBlock,
     OvenOut,
     ProductOut,
+    ProductUpdate,
     WindowOut,
 )
 from app.services.oven_engine import (
@@ -25,7 +26,7 @@ api_router = APIRouter()
 
 
 def _recipe(p: Product) -> RecipeDurations:
-    return RecipeDurations(p.ferment_min, p.bake_min)
+    return RecipeDurations(p.ferment_min, p.bake_min, p.proof_off_oven)
 
 
 def _all_occupancies(db: Session) -> list[Occupancy]:
@@ -66,6 +67,17 @@ def health():
 @api_router.get("/products", response_model=list[ProductOut])
 def products(db: Session = Depends(get_db)):
     return db.scalars(select(Product).order_by(Product.id)).all()
+
+
+@api_router.patch("/products/{product_id}", response_model=ProductOut)
+def update_product(product_id: int, body: ProductUpdate, db: Session = Depends(get_db)):
+    product = db.get(Product, product_id)
+    if not product:
+        raise HTTPException(404, "产品不存在")
+    product.proof_off_oven = body.proof_off_oven
+    db.commit()
+    db.refresh(product)
+    return product
 
 
 @api_router.get("/ovens", response_model=list[OvenOut])
@@ -144,7 +156,7 @@ def windows(product_id: int, db: Session = Depends(get_db)):
     product = db.get(Product, product_id)
     if not product:
         raise HTTPException(404, "产品不存在")
-    duration = product.ferment_min + product.bake_min
+    duration = _recipe(product).occupancy_min
     existing = _all_occupancies(db)
     out: list[WindowOut] = []
     for oven in db.scalars(select(Oven).order_by(Oven.id)).all():
