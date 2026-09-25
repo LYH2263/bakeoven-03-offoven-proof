@@ -37,13 +37,23 @@ def build_occupancies(
     batch_id: int,
     start_min: int,
     recipe: RecipeDurations,
+    proof_off_oven: bool = False,
 ) -> list[Occupancy]:
+    """生成一个批次的占炉段（半开区间）。
+
+    - 离炉醒发（proof_off_oven=True）：发酵不占炉，只有烘烤段；
+      烘烤起点仍为 start_min + ferment_min，不得提前。
+    - 未标明离炉：发酵、烘烤两段都占炉。
+    - 零时长段（如发酵 0 分钟）不产生占炉段。
+    """
     ferment = Interval(start_min, start_min + recipe.ferment_min)
     bake = Interval(ferment.end, ferment.end + recipe.bake_min)
-    return [
-        Occupancy(oven_id, ferment, "ferment", batch_id),
-        Occupancy(oven_id, bake, "bake", batch_id),
-    ]
+    out: list[Occupancy] = []
+    if not proof_off_oven and ferment.start < ferment.end:
+        out.append(Occupancy(oven_id, ferment, "ferment", batch_id))
+    if bake.start < bake.end:
+        out.append(Occupancy(oven_id, bake, "bake", batch_id))
+    return out
 
 
 def find_conflicts(existing: list[Occupancy], candidates: list[Occupancy]) -> list[tuple[Occupancy, Occupancy]]:

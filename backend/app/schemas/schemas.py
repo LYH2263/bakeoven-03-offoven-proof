@@ -7,7 +7,12 @@ class ProductOut(BaseModel):
     name: str
     ferment_min: int
     bake_min: int
+    proof_off_oven: bool
     model_config = {"from_attributes": True}
+
+
+class ProductUpdate(BaseModel):
+    proof_off_oven: bool
 
 
 class OvenOut(BaseModel):
@@ -28,6 +33,7 @@ class BatchOut(BaseModel):
     oven_label: str | None = None
     ferment_end: int | None = None
     bake_end: int | None = None
+    proof_off_oven: bool = False
     model_config = {"from_attributes": True}
 
 

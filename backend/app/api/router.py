@@ -11,6 +11,7 @@ from app.schemas.schemas import (
     GanttBlock,
     OvenOut,
     ProductOut,
+    ProductUpdate,
     WindowOut,
 )
 from app.services.oven_engine import (
@@ -35,7 +36,7 @@ def _all_occupancies(db: Session) -> list[Occupancy]:
         p = db.get(Product, b.product_id)
         if not p:
             continue
-        out.extend(build_occupancies(b.oven_id, b.id, b.start_min, _recipe(p)))
+        out.extend(build_occupancies(b.oven_id, b.id, b.start_min, _recipe(p), p.proof_off_oven))
     return out
 
 
@@ -55,6 +56,7 @@ def _batch_out(db: Session, b: Batch) -> BatchOut:
         oven_label=o.label if o else None,
         ferment_end=ferment_end,
         bake_end=bake_end,
+        proof_off_oven=p.proof_off_oven if p else False,
     )
 
 
@@ -66,6 +68,17 @@ def health():
 @api_router.get("/products", response_model=list[ProductOut])
 def products(db: Session = Depends(get_db)):
     return db.scalars(select(Product).order_by(Product.id)).all()
+
+
+@api_router.patch("/products/{product_id}", response_model=ProductOut)
+def update_product(product_id: int, body: ProductUpdate, db: Session = Depends(get_db)):
+    product = db.get(Product, product_id)
+    if not product:
+        raise HTTPException(404, "产品不存在")
+    product.proof_off_oven = body.proof_off_oven
+    db.commit()
+    db.refresh(product)
+    return product
 
 
 @api_router.get("/ovens", response_model=list[OvenOut])
@@ -86,7 +99,7 @@ def create_batch(body: BatchCreate, db: Session = Depends(get_db)):
     if not product or not oven:
         raise HTTPException(404, "产品或炉位不存在")
     recipe = _recipe(product)
-    candidates = build_occupancies(oven.id, -1, body.start_min, recipe)
+    candidates = build_occupancies(oven.id, -1, body.start_min, recipe, product.proof_off_oven)
     existing = _all_occupancies(db)
     hits = find_conflicts(existing, candidates)
     code = body.code or f"BO-{body.start_min}"
@@ -119,7 +132,7 @@ def gantt(db: Session = Depends(get_db)):
         o = db.get(Oven, b.oven_id)
         if not p or not o:
             continue
-        for occ in build_occupancies(b.oven_id, b.id, b.start_min, _recipe(p)):
+        for occ in build_occupancies(b.oven_id, b.id, b.start_min, _recipe(p), p.proof_off_oven):
             blocks.append(
                 GanttBlock(
                     batch_id=b.id,
@@ -144,7 +157,8 @@ def windows(product_id: int, db: Session = Depends(get_db)):
     product = db.get(Product, product_id)
     if not product:
         raise HTTPException(404, "产品不存在")
-    duration = product.ferment_min + product.bake_min
+    # 按实际占炉时长找空档：离炉醒发的产品只有烘烤段占炉
+    duration = product.bake_min if product.proof_off_oven else product.ferment_min + product.bake_min
     existing = _all_occupancies(db)
     out: list[WindowOut] = []
     for oven in db.scalars(select(Oven).order_by(Oven.id)).all():
